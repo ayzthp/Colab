@@ -5,7 +5,10 @@ import { useState, useMemo } from 'react';
 import { useUser } from '@/firebase';
 import { useYjs } from '@/hooks/use-yjs';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Whiteboard } from './whiteboard';
+import dynamic from 'next/dynamic';
+const Whiteboard = dynamic(() => import('./whiteboard').then(mod => mod.Whiteboard), {
+  ssr: false,
+});
 import { CodeEditor } from './code-editor';
 import { Palette, Code, Loader2, Copy, Check } from 'lucide-react';
 import Link from 'next/link';
