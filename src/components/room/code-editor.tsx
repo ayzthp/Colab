@@ -19,7 +19,7 @@ import { runCode } from '@/app/actions/code';
 
 interface CodeEditorProps {
   ydoc: Y.Doc | null;
-  provider: any | null; // WebrtcProvider type
+  provider: any | null; // WebsocketProvider type
 }
 
 const languages = ['javascript', 'python', 'text'];
