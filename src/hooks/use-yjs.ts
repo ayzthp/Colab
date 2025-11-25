@@ -15,7 +15,7 @@ export const useYjs = (roomId: string, user: { uid: string; name: string; color:
     // We append a common prefix to the room ID to namespace our app
     // 'signaling' option uses public signaling servers by default
     const webrtcProvider = new WebrtcProvider(`collab-canvas-${roomId}`, doc, {
-       signaling: ['wss://signaling.yjs.dev', 'wss://y-webrtc-signaling-eu.herokuapp.com', 'wss://y-webrtc-signaling-us.herokuapp.com']
+       signaling: ['wss://signaling.yjs.dev']
     });
 
     setYdoc(doc);
