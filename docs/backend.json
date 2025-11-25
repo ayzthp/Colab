@@ -1,0 +1,213 @@
+
+{
+  "entities": {
+    "Room": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Room",
+      "type": "object",
+      "description": "Represents a collaborative room where users can interact.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the room."
+        },
+        "hostId": {
+          "type": "string",
+          "description": "Reference to User who is the host of the room. (Relationship: User 1:N Room)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the room."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the room was created.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "hostId",
+        "name",
+        "createdAt"
+      ]
+    },
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user of the application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the user."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the user.",
+          "format": "email"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name of the user."
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "URL of the user's profile picture.",
+          "format": "uri"
+        }
+      },
+      "required": [
+        "id",
+        "email"
+      ]
+    },
+    "WhiteboardData": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "WhiteboardData",
+      "type": "object",
+      "description": "Stores the data for the collaborative whiteboard.",
+      "properties": {
+        "roomId": {
+          "type": "string",
+          "description": "Reference to Room. (Relationship: Room 1:1 WhiteboardData)"
+        },
+        "data": {
+          "type": "string",
+          "description": "JSON string representing the whiteboard drawing data."
+        },
+        "writingPowerId": {
+          "type": "string",
+          "description": "Reference to User who has the white board power"
+        }
+      },
+      "required": [
+        "roomId",
+        "data",
+        "writingPowerId"
+      ]
+    },
+    "CodeEditorData": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "CodeEditorData",
+      "type": "object",
+      "description": "Stores the code and related data for the collaborative code editor.",
+      "properties": {
+        "roomId": {
+          "type": "string",
+          "description": "Reference to Room. (Relationship: Room 1:1 CodeEditorData)"
+        },
+        "code": {
+          "type": "string",
+          "description": "The code in the editor."
+        },
+        "language": {
+          "type": "string",
+          "description": "The programming language selected for the editor."
+        },
+        "input": {
+          "type": "string",
+          "description": "Input provided for the code execution."
+        },
+        "output": {
+          "type": "string",
+          "description": "Output generated after code execution."
+        },
+        "writingPowerId": {
+          "type": "string",
+          "description": "Reference to User who has the writing power."
+        }
+      },
+      "required": [
+        "roomId",
+        "code",
+        "language"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profiles. Access is restricted to the user themselves.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/rooms/{roomId}",
+        "definition": {
+          "entityName": "Room",
+          "schema": {
+            "$ref": "#/backend/entities/Room"
+          },
+          "description": "Stores room metadata, including hostId, name, and creation timestamp. Includes a 'members' map for authorization, denormalized into WhiteboardData and CodeEditorData.",
+          "params": [
+            {
+              "name": "roomId",
+              "description": "The unique identifier of the room."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/rooms/{roomId}/whiteboardData/{whiteboardDataId}",
+        "definition": {
+          "entityName": "WhiteboardData",
+          "schema": {
+            "$ref": "#/backend/entities/WhiteboardData"
+          },
+          "description": "Stores whiteboard data for a specific room. Includes denormalized 'members' map from the parent room for authorization independence.",
+          "params": [
+            {
+              "name": "roomId",
+              "description": "The unique identifier of the room."
+            },
+            {
+              "name": "whiteboardDataId",
+              "description": "The unique identifier of the whiteboard data."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/rooms/{roomId}/codeEditorData/{codeEditorDataId}",
+        "definition": {
+          "entityName": "CodeEditorData",
+          "schema": {
+            "$ref": "#/backend/entities/CodeEditorData"
+          },
+          "description": "Stores code editor data for a specific room. Includes denormalized 'members' map from the parent room for authorization independence.",
+          "params": [
+            {
+              "name": "roomId",
+              "description": "The unique identifier of the room."
+            },
+            {
+              "name": "codeEditorDataId",
+              "description": "The unique identifier of the code editor data."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to address the 'auth/operation-not-allowed' error, ensure Authorization Independence, and facilitate secure data access for the CollabCanvas application. The error typically arises when Firebase Authentication is not enabled in the Firebase Console.  Enabling Authentication is a prerequisite.\n\nThe structure prioritizes path-based ownership for private user data and uses membership maps and denormalization for collaborative scenarios. All collections are designed with a homogeneous security posture.\n\n**Authorization Independence and QAPs:**\n\n*   **Rooms:** The `rooms` collection stores room metadata, including the `hostId`. The `members` map inside each room document manages user roles. This eliminates the need for `get()` calls to parent documents to validate access. List operations (QAPs) are secured by ensuring that only members (or the host) of a room can access the room's details. The host's ID is stored in each room to make the data independent.\n*   **WhiteboardData & CodeEditorData:** These are stored as subcollections under the `rooms` collection to associate these with the room. The `roomId` property links the data, and `writingPowerId` indicates the current user with writing permissions. To ensure authorization independence, the `members` map from the parent `room` document is denormalized into each document in the `whiteboardData` and `codeEditorData` collections. This ensures that rules do not need to `get()` the parent `room` document to check membership.\n*   **Users:**  The `users` collection stores user profiles.  Access is restricted to the user themselves, ensuring privacy.\n\nThe denormalization of the `members` map is essential for Authorization Independence. Without it, security rules would need to perform costly and brittle `get()` operations to verify a user's membership in a room. This also enables atomic operations for creating and modifying data related to both code and white board functionality."
+  }
+}
+
+    

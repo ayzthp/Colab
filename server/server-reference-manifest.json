@@ -1,0 +1,17 @@
+{
+  "node": {
+    "6028841fc7c845cdf8ecf5486dfce6d263653cd720": {
+      "workers": {
+        "app/room/[roomId]/page": {
+          "moduleId": "[project]/.next-internal/server/app/room/[roomId]/page/actions.js { ACTIONS_MODULE0 => \"[project]/src/app/actions/code.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
+          "async": false
+        }
+      },
+      "layer": {
+        "app/room/[roomId]/page": "action-browser"
+      }
+    }
+  },
+  "edge": {},
+  "encryptionKey": "whSJJEv9c+KRXZFCYh7I2uUjzfsQGkcq18BfzBDyivk="
+}

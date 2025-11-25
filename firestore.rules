@@ -1,0 +1,148 @@
+
+/**
+ * Core Philosophy: This ruleset enforces a hybrid security model. It combines a
+ * strict user-ownership model for private user profiles with a collaborative,
+ * membership-based model for shared rooms and their sub-resources.
+ *
+ * Data Structure: User profiles are stored in a top-level `/users` collection.
+ * Collaborative data is organized under a top-level `/rooms` collection, with
+ * related resources like whiteboards and code editors nested as subcollections.
+ *
+ * Key Security Decisions:
+ * - User Listing is disallowed to protect user privacy. Users can only access
+ *   their own document in the `/users` collection.
+ * - Room access (read and write) is restricted to users listed in a `members`
+ *   map on the room document itself. The user who creates a room is the `hostId`
+ *   and has special privileges, such as deleting the room or changing permissions.
+ * - Subcollection access (e.g., whiteboardData) is derived from the parent
+ *   room's membership, ensuring consistent permissions throughout a room's data tree.
+ * - Data validation is limited to authorization-critical fields (e.g., ownership
+ *   IDs) to allow for flexible data shapes during rapid prototyping.
+ *
+ * Denormalization for Authorization: Access to rooms and their subcollections
+ * is controlled by a `members` map denormalized directly onto each `/rooms/{roomId}`
+ * document. This allows for fast, efficient security checks without needing to
+ * query a separate 'memberships' collection.
+ *
+ * Structural Segregation: User-private data (`/users`) is structurally
+ * separate from collaborative data (`/rooms`), which simplifies rules and
+ * prevents accidental data leakage.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions for improved readability and reusability
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Checks for ownership on an existing document. Used for update/delete.
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
+    }
+
+    // Checks if the requesting user is a member of a room by checking the members map on an existing room document.
+    function isExistingRoomMember(roomId) {
+      return isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.members;
+    }
+
+    // Checks if the requesting user is the host of a room.
+    function isExistingRoomHost(roomId) {
+      return isSignedIn() && request.auth.uid == get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId;
+    }
+    
+    // Checks if the requesting user has whiteboard writing power (stored on room doc)
+    function hasWhiteboardPower(roomId) {
+       return request.auth.uid == get(/databases/$(database)/documents/rooms/$(roomId)).data.writingPowerId;
+    }
+
+    /**
+     * @description Controls access to user profile documents.
+     * @path /users/{userId}
+     * @allow (create) A new user creating their own profile document for the first time. `auth.uid` must match `{userId}`.
+     * @deny (get) An authenticated user trying to read another user's profile.
+     * @principle Restricts access to a user's own data tree.
+     */
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Manages access to collaborative room documents. Access is granted to users in the 'members' map.
+     * @path /rooms/{roomId}
+     * @allow (get) Any signed-in user can read the room (needed to join).
+     * @deny (delete) A room member who is not the host trying to delete the room.
+     * @principle Enforces shared access via a collaborator list (`members` map) on the document.
+     */
+    match /rooms/{roomId} {
+      // Changed to isSignedIn() to allow new users to check if room exists and join
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      
+      allow create: if isSignedIn() && request.resource.data.hostId == request.auth.uid;
+      
+      // Update Rules:
+      // 1. Host can update anything.
+      // 2. Members (or new joiners) can ONLY update the 'members' field (to join/leave).
+      //    They CANNOT change hostId, writingPowerId, or other metadata.
+      allow update: if isExistingRoomHost(roomId) || 
+        (isSignedIn() && 
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) &&
+         request.resource.data.hostId == resource.data.hostId &&
+         request.resource.data.writingPowerId == resource.data.writingPowerId);
+         
+      allow delete: if isExistingRoomHost(roomId) && resource != null;
+    }
+
+    /**
+     * @description Secures the whiteboard data associated with a room.
+     * @path /rooms/{roomId}/whiteboardData/{whiteboardDataId}
+     * @allow (update) Host OR User with writingPowerId.
+     * @deny (create) A user who is not a member of the parent room trying to create a whiteboard.
+     * @principle Inherits permissions from a parent document using a `get()` call.
+     */
+    match /rooms/{roomId}/whiteboardData/{whiteboardDataId} {
+      allow get: if isExistingRoomMember(roomId);
+      allow list: if isExistingRoomMember(roomId);
+      
+      // Only Host or Writer can create/update points
+      allow create: if isExistingRoomMember(roomId) && (isExistingRoomHost(roomId) || hasWhiteboardPower(roomId));
+      allow update: if isExistingRoomMember(roomId) && (isExistingRoomHost(roomId) || hasWhiteboardPower(roomId));
+      allow delete: if isExistingRoomMember(roomId) && (isExistingRoomHost(roomId) || hasWhiteboardPower(roomId));
+    }
+
+    /**
+     * @description Secures the code editor data associated with a room.
+     * @path /rooms/{roomId}/codeEditorData/{codeEditorDataId}
+     * @allow (update) Host OR User with writingPowerId (defined on THIS doc).
+     * @deny (get) A user who is not a member of the parent room trying to read the code editor data.
+     * @principle Inherits permissions from a parent document using a `get()` call.
+     */
+    match /rooms/{roomId}/codeEditorData/{codeEditorDataId} {
+      allow get: if isExistingRoomMember(roomId);
+      allow list: if isExistingRoomMember(roomId);
+      allow create: if isExistingRoomMember(roomId);
+      
+      // Update:
+      // 1. Host can always update (to change permissions or reset code).
+      // 2. The assigned Writer can update, BUT cannot change the 'writingPowerId' (steal the lock).
+      allow update: if isExistingRoomMember(roomId) && 
+        (isExistingRoomHost(roomId) || 
+         (request.auth.uid == resource.data.writingPowerId && 
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['writingPowerId'])
+         )
+        );
+        
+      allow delete: if isExistingRoomMember(roomId);
+    }
+  }
+}
