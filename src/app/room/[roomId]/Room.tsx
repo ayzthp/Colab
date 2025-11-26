@@ -16,7 +16,7 @@ export function Room({ children, roomId }: { children: ReactNode; roomId: string
       <RoomProvider
         id={`collab-canvas-${roomId}`}
         initialPresence={{ cursor: null }}
-        initialStorage={{ strokes: new LiveList() }}
+        initialStorage={{ strokes: new LiveList([]) }}
       >
         <ClientSideSuspense fallback={<div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
           {children}
