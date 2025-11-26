@@ -8,11 +8,16 @@ import {
   ClientSideSuspense,
 } from "@liveblocks/react/suspense";
 import { Loader2 } from "lucide-react";
+import { LiveList } from "@liveblocks/client";
 
 export function Room({ children, roomId }: { children: ReactNode; roomId: string }) {
   return (
     <LiveblocksProvider publicApiKey={"pk_dev_zNvuLkpUTPxdr1ArXVbb0rHjG67Ic0aPcFL9ZwyjhYNJ2B3skHYUWlIhb5jLKeoX"}>
-      <RoomProvider id={`collab-canvas-${roomId}`} initialPresence={{ cursor: null }}>
+      <RoomProvider
+        id={`collab-canvas-${roomId}`}
+        initialPresence={{ cursor: null }}
+        initialStorage={{ strokes: new LiveList() }}
+      >
         <ClientSideSuspense fallback={<div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
           {children}
         </ClientSideSuspense>

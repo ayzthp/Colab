@@ -162,7 +162,7 @@ export default function RoomClient({ roomId }: { roomId: string }) {
               </div>
             </div>
             <TabsContent value="whiteboard" className="m-0 flex-1 overflow-auto">
-               <Whiteboard ydoc={ydoc} provider={provider} />
+               <Whiteboard />
             </TabsContent>
             <TabsContent value="code" className="m-0 flex-1 overflow-auto">
                <CodeEditor ydoc={ydoc} provider={provider} />
