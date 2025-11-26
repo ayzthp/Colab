@@ -171,8 +171,6 @@ export default function RoomClient({ roomId }: { roomId: string }) {
         </main>
         <ParticipantsSidebar
           roomId={roomId}
-          awareness={provider?.awareness}
-          currentUserId={user.uid}
         />
       </div>
     </div>
