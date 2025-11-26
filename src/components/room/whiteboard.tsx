@@ -25,10 +25,9 @@ const palette = ['#111111', '#EF4444', '#3B82F6', '#22C55E', '#F97316', '#8B5CF6
 
 export function Whiteboard() {
   const strokes = useStorage(root => {
-    const storage = root as LiveObject<{ strokes: LiveList<Stroke> }>;
-    const list = storage.get('strokes');
+    const list = (root as { strokes?: Stroke[] }).strokes;
     if (!list) return [];
-    return list.toArray() as Stroke[];
+    return list;
   });
 
   const [presence, updateMyPresence] = useMyPresence();
