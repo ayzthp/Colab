@@ -18,7 +18,6 @@ export const useYjs = (roomId: string, user: { uid: string; name: string; color:
     setYdoc(doc);
     setProvider(yProvider);
     setAwareness(yProvider.awareness);
-    setStatus('connected'); // Liveblocks manages connection state internally, assume connected if room exists
 
     // Sync user details to Awareness
     yProvider.awareness.setLocalStateField('user', {
@@ -26,8 +25,22 @@ export const useYjs = (roomId: string, user: { uid: string; name: string; color:
       color: user.color,
       id: user.uid
     });
+    
+    // Track connection status
+    // Liveblocks 'connection' event gives 'closed', 'authenticating', 'unavailable', 'failed', 'open', 'connecting'
+    const unsubscribe = room.subscribe("connection", (connectionStatus) => {
+      console.log(`[Liveblocks] Connection status: ${connectionStatus}`);
+      if (connectionStatus === 'open') {
+        setStatus('connected');
+      } else if (connectionStatus === 'connecting' || connectionStatus === 'authenticating') {
+        setStatus('connecting');
+      } else {
+        setStatus('disconnected');
+      }
+    });
 
     return () => {
+      unsubscribe();
       yProvider.destroy();
       doc.destroy();
     };
