@@ -60,6 +60,9 @@
     "yjs": "^13.6.27",
     "zod": "^3.24.2"
   },
+  "overrides": {
+    "react-reconciler": "0.29.0"
+  },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^18",
