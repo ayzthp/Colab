@@ -9,7 +9,7 @@ import {
   useOthers,
   useStorage,
 } from '@liveblocks/react/suspense';
-import type { LiveList } from '@liveblocks/client';
+import type { LiveList, LiveObject } from '@liveblocks/client';
 import { Button } from '../ui/button';
 import { Trash2 } from 'lucide-react';
 
@@ -25,13 +25,10 @@ const palette = ['#111111', '#EF4444', '#3B82F6', '#22C55E', '#F97316', '#8B5CF6
 
 export function Whiteboard() {
   const strokes = useStorage(root => {
-    const list = (root as { strokes?: LiveList<Stroke> }).strokes;
+    const storage = root as LiveObject<{ strokes: LiveList<Stroke> }>;
+    const list = storage.get('strokes');
     if (!list) return [];
-    const items: Stroke[] = [];
-    for (let i = 0; i < list.length; i++) {
-      items.push(list.get(i) as Stroke);
-    }
-    return items;
+    return list.toArray() as Stroke[];
   });
 
   const [presence, updateMyPresence] = useMyPresence();
