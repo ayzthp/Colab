@@ -8,7 +8,7 @@ import { Eraser, Trash2 } from 'lucide-react';
 
 interface WhiteboardProps {
   ydoc: Y.Doc | null;
-  provider: any | null; // WebsocketProvider type
+  provider: any | null;
 }
 
 const colors = [

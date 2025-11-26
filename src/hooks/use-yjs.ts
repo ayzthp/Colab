@@ -1,45 +1,37 @@
 
 import { useEffect, useState } from 'react';
 import * as Y from 'yjs';
-import { WebsocketProvider } from 'y-websocket';
+import { useRoom } from '@liveblocks/react';
+import LiveblocksProvider from '@liveblocks/yjs';
 
 export const useYjs = (roomId: string, user: { uid: string; name: string; color: string }) => {
+  const room = useRoom();
   const [ydoc, setYdoc] = useState<Y.Doc | null>(null);
-  const [provider, setProvider] = useState<WebsocketProvider | null>(null);
+  const [provider, setProvider] = useState<LiveblocksProvider | null>(null);
   const [awareness, setAwareness] = useState<any | null>(null);
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
 
   useEffect(() => {
     const doc = new Y.Doc();
-    
-    // Connecting to public y-websocket demo server
-    // If this fails, check your network firewall
-    const wsProvider = new WebsocketProvider(
-      'wss://demos.yjs.dev', 
-      `collab-canvas-${roomId}`, 
-      doc
-    );
-
-    wsProvider.on('status', (event: any) => {
-      console.log(`[Yjs] ${roomId} Status:`, event.status);
-      setStatus(event.status);
-    });
+    const yProvider = new LiveblocksProvider(room, doc);
 
     setYdoc(doc);
-    setProvider(wsProvider);
-    setAwareness(wsProvider.awareness);
+    setProvider(yProvider);
+    setAwareness(yProvider.awareness);
+    setStatus('connected'); // Liveblocks manages connection state internally, assume connected if room exists
 
-    wsProvider.awareness.setLocalStateField('user', {
+    // Sync user details to Awareness
+    yProvider.awareness.setLocalStateField('user', {
       name: user.name,
       color: user.color,
       id: user.uid
     });
 
     return () => {
-      wsProvider.destroy();
+      yProvider.destroy();
       doc.destroy();
     };
-  }, [roomId, user.uid, user.name, user.color]);
+  }, [room, user.uid, user.name, user.color]);
 
   return { ydoc, provider, awareness, status };
 };
