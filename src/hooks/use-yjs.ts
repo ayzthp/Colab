@@ -2,18 +2,18 @@
 import { useEffect, useState } from 'react';
 import * as Y from 'yjs';
 import { useRoom } from '@liveblocks/react';
-import LiveblocksProvider from '@liveblocks/yjs';
+import { LiveblocksYjsProvider } from '@liveblocks/yjs';
 
 export const useYjs = (roomId: string, user: { uid: string; name: string; color: string }) => {
   const room = useRoom();
   const [ydoc, setYdoc] = useState<Y.Doc | null>(null);
-  const [provider, setProvider] = useState<LiveblocksProvider | null>(null);
+  const [provider, setProvider] = useState<LiveblocksYjsProvider | null>(null);
   const [awareness, setAwareness] = useState<any | null>(null);
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
 
   useEffect(() => {
     const doc = new Y.Doc();
-    const yProvider = new LiveblocksProvider(room, doc);
+    const yProvider = new LiveblocksYjsProvider(room, doc);
 
     setYdoc(doc);
     setProvider(yProvider);
