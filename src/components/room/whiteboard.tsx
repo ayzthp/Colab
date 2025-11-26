@@ -1,8 +1,7 @@
 
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { Stage, Layer, Line } from 'react-konva';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import * as Y from 'yjs';
 import { Button } from '../ui/button';
 import { Eraser, Trash2 } from 'lucide-react';
@@ -22,39 +21,22 @@ const colors = [
 ];
 
 export function Whiteboard({ ydoc, provider }: WhiteboardProps) {
-  const [paths, setPaths] = useState<any[]>([]);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [color, setColor] = useState('#000000');
   const [isDrawing, setIsDrawing] = useState(false);
-  const isDrawingRef = useRef(false); // Ref for immediate access in event handlers
+  const currentPathRef = useRef<any>(null);
   
-  // To support resizing
-  const [stageDimensions, setStageDimensions] = useState({ width: 800, height: 600 });
-  const containerRef = useRef<HTMLDivElement>(null);
+  // We keep a local copy of paths to minimize Yjs traversal during render loop
+  const pathsRef = useRef<any[]>([]);
 
-  useEffect(() => {
-    if (!ydoc) return;
-    const yPaths = ydoc.getArray('paths');
-
-    // Initial sync
-    setPaths(yPaths.toArray());
-
-    // Observe changes
-    const observer = () => {
-      setPaths(yPaths.toArray());
-    };
-    yPaths.observe(observer);
-
-    return () => yPaths.unobserve(observer);
-  }, [ydoc]);
-
-  // Handle resizing
+  // Resize handling
   useEffect(() => {
     const handleResize = () => {
-      if (containerRef.current) {
-        setStageDimensions({
-          width: containerRef.current.offsetWidth,
-          height: containerRef.current.offsetHeight
-        });
+      const canvas = canvasRef.current;
+      if (canvas && canvas.parentElement) {
+        canvas.width = canvas.parentElement.offsetWidth;
+        canvas.height = canvas.parentElement.offsetHeight;
+        requestAnimationFrame(draw); // Redraw after resize
       }
     };
     
@@ -64,14 +46,79 @@ export function Whiteboard({ ydoc, provider }: WhiteboardProps) {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const handleMouseDown = (e: any) => {
+  // Yjs Sync
+  useEffect(() => {
+    if (!ydoc) return;
+    const yPaths = ydoc.getArray('paths');
+
+    const syncPaths = () => {
+      pathsRef.current = yPaths.toArray();
+      requestAnimationFrame(draw);
+    };
+
+    // Initial sync
+    syncPaths();
+
+    // Observe changes
+    const observer = () => {
+      syncPaths();
+    };
+    yPaths.observe(observer);
+
+    return () => yPaths.unobserve(observer);
+  }, [ydoc]);
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw all paths
+    pathsRef.current.forEach((path) => {
+      if (!path.points || path.points.length < 4) return;
+
+      ctx.beginPath();
+      ctx.lineWidth = path.strokeWidth || 5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = path.color;
+      
+      if (path.color === '#FFFFFF') {
+        ctx.globalCompositeOperation = 'destination-out';
+      } else {
+        ctx.globalCompositeOperation = 'source-over';
+      }
+
+      ctx.moveTo(path.points[0], path.points[1]);
+      for (let i = 2; i < path.points.length; i += 2) {
+        ctx.lineTo(path.points[i], path.points[i + 1]);
+      }
+      ctx.stroke();
+    });
+  }, []);
+
+  const getPointerPos = (e: any) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top
+    };
+  };
+
+  const startDrawing = (e: any) => {
     if (!ydoc) return;
     setIsDrawing(true);
-    isDrawingRef.current = true;
+    const pos = getPointerPos(e);
     
-    const pos = e.target.getStage().getPointerPosition();
     const id = Date.now().toString();
-    
     const newPath = {
       id,
       points: [pos.x, pos.y],
@@ -79,42 +126,56 @@ export function Whiteboard({ ydoc, provider }: WhiteboardProps) {
       strokeWidth: 5
     };
     
+    currentPathRef.current = newPath;
+    
+    // Optimistic update locally
+    pathsRef.current.push(newPath);
+    requestAnimationFrame(draw);
+
+    // Sync start to Yjs
     const yPaths = ydoc.getArray('paths');
     yPaths.push([newPath]);
   };
 
-  const handleMouseMove = (e: any) => {
-    // Critical: check ref, not state, for high-frequency events if closure is stale
-    if (!isDrawingRef.current || !ydoc) return;
+  const drawMove = (e: any) => {
+    if (!isDrawing || !currentPathRef.current || !ydoc) return;
+    const pos = getPointerPos(e);
     
-    const stage = e.target.getStage();
-    const point = stage.getPointerPosition();
+    // Update local current path
+    const currentPath = currentPathRef.current;
+    currentPath.points.push(pos.x, pos.y);
     
+    // Redraw locally immediately (high performance)
+    requestAnimationFrame(draw);
+
+    // Sync update to Yjs (throttling could be added here for performance)
     const yPaths = ydoc.getArray('paths');
-    // Get the last path
-    if (yPaths.length === 0) return;
     
-    // We modify the last path in place (optimize for performance by replacing)
-    // In a production app, you might want to optimize this further
-    const index = yPaths.length - 1;
-    const currentPath: any = yPaths.get(index);
+    // We need to find the index of our current path. 
+    // Since we just pushed it, it should be the last one, but let's be safe if concurrent edits happened.
+    // For simplicity in this implementation, we assume it's the last one we pushed.
+    // A more robust way is to findIndex by ID.
     
-    // Create new points array
-    const newPoints = currentPath.points.concat([point.x, point.y]);
+    // Ideally, we update the *existing* object in the array. 
+    // Y.Array doesn't support mutable objects directly unless they are Y.Maps.
+    // We are using JSON objects, so we must replace the whole object or update it.
+    // Replacing deeply nested objects in high frequency is expensive in Yjs.
+    // Ideally 'paths' should be a Y.Array of Y.Maps.
+    // For now, to keep the schema consistent with previous implementation:
     
-    // Update the path (delete and insert is the standard Yjs way for immutable-like updates on index)
-    // Note: modifying deeply nested objects in Yjs can be done via Y.Map if path was a Y.Map
-    // keeping it simple as JSON object for now.
-    
-    ydoc.transact(() => {
-        yPaths.delete(index, 1);
-        yPaths.insert(index, [{ ...currentPath, points: newPoints }]);
-    });
+    const index = yPaths.toArray().findIndex((p: any) => p.id === currentPath.id);
+    if (index !== -1) {
+       // In Yjs, replacing is delete + insert
+       ydoc.transact(() => {
+         yPaths.delete(index, 1);
+         yPaths.insert(index, [currentPath]);
+       });
+    }
   };
 
-  const handleMouseUp = () => {
+  const stopDrawing = () => {
     setIsDrawing(false);
-    isDrawingRef.current = false;
+    currentPathRef.current = null;
   };
 
   const handleClear = () => {
@@ -124,7 +185,7 @@ export function Whiteboard({ ydoc, provider }: WhiteboardProps) {
   };
 
   return (
-    <div ref={containerRef} className="relative flex h-full w-full flex-col">
+    <div className="relative flex h-full w-full flex-col">
       <div className="flex items-center gap-2 border-b p-2 bg-white z-10">
         <div className="flex items-center gap-1 rounded-md border p-1">
           {colors.map((c) => (
@@ -156,34 +217,18 @@ export function Whiteboard({ ydoc, provider }: WhiteboardProps) {
         </Button>
       </div>
       
-      <div className="flex-1 bg-white overflow-hidden">
-        <Stage
-          width={stageDimensions.width}
-          height={stageDimensions.height}
-          onMouseDown={handleMouseDown}
-          onMousemove={handleMouseMove}
-          onMouseup={handleMouseUp}
-          onTouchStart={handleMouseDown}
-          onTouchMove={handleMouseMove}
-          onTouchEnd={handleMouseUp}
-        >
-          <Layer>
-            {paths.map((path, i) => (
-              <Line
-                key={i}
-                points={path.points}
-                stroke={path.color}
-                strokeWidth={path.strokeWidth}
-                tension={0.5}
-                lineCap="round"
-                lineJoin="round"
-                globalCompositeOperation={
-                  path.color === '#FFFFFF' ? 'destination-out' : 'source-over'
-                }
-              />
-            ))}
-          </Layer>
-        </Stage>
+      <div className="flex-1 bg-white overflow-hidden relative">
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 touch-none"
+          onMouseDown={startDrawing}
+          onMouseMove={drawMove}
+          onMouseUp={stopDrawing}
+          onMouseLeave={stopDrawing}
+          onTouchStart={startDrawing}
+          onTouchMove={drawMove}
+          onTouchEnd={stopDrawing}
+        />
       </div>
     </div>
   );
