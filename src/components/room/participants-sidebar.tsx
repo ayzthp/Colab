@@ -1,9 +1,7 @@
 
 'use client';
 
-import { doc, updateDoc } from 'firebase/firestore';
-import { useFirestore, errorEmitter, FirestorePermissionError } from '@/firebase';
-import type { Participant } from '@/types';
+import { useEffect, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,33 +13,50 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Crown, MoreHorizontal, Copy, Check } from 'lucide-react';
+import { MoreHorizontal, Copy, Check, User } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 
 interface ParticipantsSidebarProps {
   roomId: string;
-  participants: Participant[];
-  hostId: string;
-  writingPowerId?: string;
-  codeWritingPowerId?: string;
+  awareness: any; // Yjs Awareness
   currentUserId: string;
-  isHost: boolean;
 }
 
 export function ParticipantsSidebar({
   roomId,
-  participants,
-  hostId,
-  writingPowerId,
-  codeWritingPowerId,
+  awareness,
   currentUserId,
-  isHost,
 }: ParticipantsSidebarProps) {
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
-  const firestore = useFirestore();
+  const [participants, setParticipants] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!awareness) return;
+
+    const updateParticipants = () => {
+      const states = Array.from(awareness.getStates().values());
+      // Filter out users who haven't set their user data yet
+      const users = states
+        .map((state: any) => state.user)
+        .filter((user) => user);
+        
+      // Remove duplicates based on ID if necessary (though awareness handles clientIDs)
+      // Actually, awareness tracks sessions. If a user has multiple tabs open, they appear twice.
+      // We can dedupe by user.id if we want unique users vs unique connections.
+      
+      setParticipants(users);
+    };
+
+    updateParticipants();
+
+    awareness.on('change', updateParticipants);
+
+    return () => {
+      awareness.off('change', updateParticipants);
+    };
+  }, [awareness]);
 
   const getInitials = (name: string) => {
     if (!name) return 'A';
@@ -53,46 +68,6 @@ export function ParticipantsSidebar({
       .split(' ')
       .map((n) => n[0])
       .join('');
-  };
-
-  const handlePermissionChange = async (
-    type: 'host' | 'whiteboardWriter' | 'codeWriter',
-    newUid: string
-  ) => {
-    if (!firestore || !isHost) return;
-    let docRef;
-    let payload;
-
-    if (type === 'host') {
-      docRef = doc(firestore, 'rooms', roomId);
-      payload = { hostId: newUid };
-    } else if (type === 'whiteboardWriter') {
-      docRef = doc(firestore, 'rooms', roomId);
-      payload = { writingPowerId: newUid };
-    } else { // codeWriter
-      docRef = doc(firestore, `rooms/${roomId}/codeEditorData`, 'data');
-      payload = { writingPowerId: newUid };
-    }
-
-    updateDoc(docRef, payload)
-      .then(() => {
-        toast({
-          title: 'Permissions Updated',
-          description: `Control has been transferred.`,
-        });
-      })
-      .catch((error: any) => {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: docRef.path,
-            operation: 'update',
-            requestResourceData: payload
-        }));
-        toast({
-          variant: 'destructive',
-          title: 'Error',
-          description: `Failed to update permissions. Only the host can perform this action.`,
-        });
-      });
   };
 
   const copyRoomLink = () => {
@@ -108,7 +83,7 @@ export function ParticipantsSidebar({
       <Card className="m-4 border-none bg-transparent shadow-none">
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
-            <span>Participants ({participants.length})</span>
+            <span>Active Users ({participants.length})</span>
             <Button onClick={copyRoomLink} variant="ghost" size="icon">
               {copied ? (
                 <Check className="h-4 w-4 text-green-500" />
@@ -121,65 +96,24 @@ export function ParticipantsSidebar({
         <CardContent className="p-0">
           <ScrollArea className="h-[calc(100vh-12rem)]">
             <div className="space-y-2 p-4 pt-0">
-              {participants.map((p) => (
+              {participants.map((p, index) => (
                 <div
-                  key={p.uid}
+                  key={`${p.id}-${index}`}
                   className="flex items-center justify-between rounded-lg p-2 hover:bg-accent"
                 >
                   <div className="flex items-center gap-3">
-                    <Avatar className="h-9 w-9">
-                      <AvatarImage src={p.avatar} />
+                    <Avatar className="h-9 w-9" style={{ border: `2px solid ${p.color}` }}>
                       <AvatarFallback>{getInitials(p.name)}</AvatarFallback>
                     </Avatar>
                     <div className="flex flex-col">
                       <span className="text-sm font-medium">
-                        {p.name} {p.uid === currentUserId && '(You)'}
+                        {p.name} {p.id === currentUserId && '(You)'}
                       </span>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        {p.uid === hostId && (
-                          <Crown className="h-3 w-3 text-amber-500" />
-                        )}
-                        {p.uid === writingPowerId && (
-                          <span className="text-blue-500">Board</span>
-                        )}
-                        {p.uid === codeWritingPowerId && (
-                          <span className="text-purple-500">Code</span>
-                        )}
+                         <span style={{ color: p.color }}>●</span> Online
                       </div>
                     </div>
                   </div>
-                  {isHost && p.uid !== currentUserId && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Manage User</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => handlePermissionChange('host', p.uid)}
-                        >
-                          Make Host
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() =>
-                            handlePermissionChange('whiteboardWriter', p.uid)
-                          }
-                        >
-                          Grant Whiteboard Control
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() =>
-                            handlePermissionChange('codeWriter', p.uid)
-                          }
-                        >
-                          Grant Code Control
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
                 </div>
               ))}
             </div>

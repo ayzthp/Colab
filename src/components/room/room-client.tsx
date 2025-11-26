@@ -9,8 +9,9 @@ import dynamic from 'next/dynamic';
 const Whiteboard = dynamic(() => import('./whiteboard').then(mod => mod.Whiteboard), {
   ssr: false,
 });
+import { ParticipantsSidebar } from './participants-sidebar';
 import { CodeEditor } from './code-editor';
-import { Palette, Code, Loader2, Copy, Check } from 'lucide-react';
+import { Palette, Code, Loader2, Copy, Check, Wifi, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -38,7 +39,7 @@ export default function RoomClient({ roomId }: { roomId: string }) {
   const userColor = useMemo(() => '#' + Math.floor(Math.random() * 16777215).toString(16), []);
 
   // Initialize Yjs
-  const { ydoc, provider } = useYjs(roomId, {
+  const { ydoc, provider, status } = useYjs(roomId, {
     uid: user?.uid || 'anonymous',
     name: user?.email || 'Anonymous',
     color: userColor,
@@ -125,6 +126,15 @@ export default function RoomClient({ roomId }: { roomId: string }) {
           </Link>
           <span className="text-muted-foreground">/</span>
           <span className="font-mono text-sm">{roomId}</span>
+          {status === 'connected' ? (
+            <span className="flex items-center gap-1 text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full">
+              <Wifi className="h-3 w-3" /> Connected
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-xs text-red-600 bg-red-100 px-2 py-1 rounded-full">
+              <WifiOff className="h-3 w-3" /> {status}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={handleCopyLink}>
@@ -148,7 +158,6 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                 </TabsTrigger>
               </TabsList>
               <div className="ml-auto text-sm text-muted-foreground">
-                {/* We could add active user count here from awareness */}
                 Real-time Sync Active
               </div>
             </div>
@@ -160,6 +169,11 @@ export default function RoomClient({ roomId }: { roomId: string }) {
             </TabsContent>
           </Tabs>
         </main>
+        <ParticipantsSidebar
+          roomId={roomId}
+          awareness={provider?.awareness}
+          currentUserId={user.uid}
+        />
       </div>
     </div>
   );
